@@ -1,0 +1,190 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "RTClib.h"
+
+RTC_DS3231 rtc;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// LED Pins
+const int LED1 = 2, LED2 = 3, LED3 = 4, LED4 = 5;
+const int buzzer = 6;
+
+// Buttons
+const int incBtn = 7;
+const int decBtn = 8;
+const int nextBtn = 9;
+
+int setHour = 0, setMin = 0, setSec = 0;
+int setField = 0; // 0 = hour, 1 = min, 2 = sec
+bool startTimeSet = false;
+bool sequenceRunning = false;
+
+void setup() {
+  Wire.begin();
+  lcd.init();
+  lcd.backlight();
+
+  pinMode(LED1, OUTPUT);
+  pinMode(LED2, OUTPUT);
+  pinMode(LED3, OUTPUT);
+  pinMode(LED4, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+
+  pinMode(incBtn, INPUT_PULLUP);
+  pinMode(decBtn, INPUT_PULLUP);
+  pinMode(nextBtn, INPUT_PULLUP);
+
+  if (!rtc.begin()) {
+    lcd.print("RTC Error!");
+    while (1);
+  }
+
+  lcd.clear();
+  lcd.print("Medicine Box");
+  delay(2000);
+}
+
+void loop() {
+  if (!startTimeSet) {
+    showCurrentTime();
+    if (digitalRead(nextBtn) == LOW) {
+      delay(300);
+      setStartTime();
+    }
+  } else if (!sequenceRunning) {
+    DateTime now = rtc.now();
+    if (now.hour() == setHour && now.minute() == setMin && now.second() == setSec) {
+      startSequence();
+      sequenceRunning = true;
+    }
+  } else {
+    // When sequence completes, auto-reset
+    startTimeSet = false;
+    sequenceRunning = false;
+  }
+}
+
+void showCurrentTime() {
+  DateTime now = rtc.now();
+  lcd.setCursor(0, 0);
+  lcd.print("Current Time:   ");
+  lcd.setCursor(0, 1);
+  lcd.print(now.hour() < 10 ? "0" : ""); lcd.print(now.hour());
+  lcd.print(":");
+  lcd.print(now.minute() < 10 ? "0" : ""); lcd.print(now.minute());
+  lcd.print(":");
+  lcd.print(now.second() < 10 ? "0" : ""); lcd.print(now.second());
+  delay(1000);
+}
+
+void setStartTime() {
+  lcd.clear();
+  lcd.print("Set Start Time");
+  delay(1000);
+  bool confirmed = false;
+  while (!confirmed) {
+    lcd.setCursor(0, 0);
+    lcd.print("Set Start Time  ");
+    lcd.setCursor(0, 1);
+    printTime(setHour, setMin, setSec);
+    lcd.setCursor(15, 0);
+    lcd.print("HMS"[setField]); // show which field is active
+
+    if (digitalRead(incBtn) == LOW) {
+      adjustTimeField(1);
+      delay(300);
+    }
+    if (digitalRead(decBtn) == LOW) {
+      adjustTimeField(-1);
+      delay(300);
+    }
+    if (digitalRead(nextBtn) == LOW) {
+      setField++;
+      if (setField > 2) {
+        confirmed = true;
+        startTimeSet = true;
+        lcd.clear();
+        lcd.print("Time Set:");
+        lcd.setCursor(0, 1);
+        printTime(setHour, setMin, setSec);
+        delay(2000);
+      }
+      delay(300);
+    }
+  }
+}
+
+void adjustTimeField(int delta) {
+  if (setField == 0) setHour = (setHour + delta + 24) % 24;
+  else if (setField == 1) setMin = (setMin + delta + 60) % 60;
+  else if (setField == 2) setSec = (setSec + delta + 60) % 60;
+}
+
+void printTime(int h, int m, int s) {
+  lcd.print(h < 10 ? "0" : ""); lcd.print(h); lcd.print(":");
+  lcd.print(m < 10 ? "0" : ""); lcd.print(m); lcd.print(":");
+  lcd.print(s < 10 ? "0" : ""); lcd.print(s); lcd.print("  ");
+}
+
+void startSequence() {
+  // --- Alert 1 (Pre-meal Dose 1)
+  lcd.clear(); lcd.print("Alert! Take Dose 1");
+  for (int i = 0; i < 15; i++) {
+    digitalWrite(LED1, HIGH);
+    digitalWrite(buzzer, HIGH);
+    delay(250);
+    digitalWrite(LED1, LOW);
+    digitalWrite(buzzer, LOW);
+    delay(250);
+    if (digitalRead(nextBtn) == LOW) {
+      lcd.clear(); lcd.print("Success Dose 1");
+      digitalWrite(LED1, HIGH);
+      digitalWrite(buzzer, LOW);
+      delay(5000);
+      break;
+    }
+  }
+
+  // Wait 15s gap
+  lcd.clear(); lcd.print("Waiting...");
+  delay(15000);
+
+  // Start Eating
+  lcd.clear(); lcd.print("Starting Eating");
+  digitalWrite(LED2, HIGH); delay(1000); digitalWrite(LED2, LOW);
+
+  // Eating time
+  lcd.clear(); lcd.print("Eating Food...");
+  delay(58000);
+
+  // End eating
+  lcd.clear(); lcd.print("Ending Eating");
+  digitalWrite(LED3, HIGH); delay(1000); digitalWrite(LED3, LOW);
+
+  // Pause before Alert 2
+  lcd.clear(); lcd.print("Waiting...");
+  delay(11000);
+
+  // --- Alert 2 (Post-meal Dose 2)
+  lcd.clear(); lcd.print("Alert! Take Dose 2");
+  for (int i = 0; i < 15; i++) {
+    digitalWrite(LED4, HIGH);
+    digitalWrite(buzzer, HIGH);
+    delay(250);
+    digitalWrite(LED4, LOW);
+    digitalWrite(buzzer, LOW);
+    delay(250);
+    if (digitalRead(nextBtn) == LOW) {
+      lcd.clear(); lcd.print("Success Dose 2");
+      digitalWrite(LED4, HIGH);
+      digitalWrite(buzzer, LOW);
+      delay(5000);
+      break;
+    }
+  }
+
+  // Sequence complete
+  lcd.clear();
+  lcd.print("Waiting...");
+  delay(2000);
+}
